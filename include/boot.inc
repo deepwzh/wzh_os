@@ -1,5 +1,12 @@
 LOADER_BASE_ADDR equ 0x900
 LOADER_START_SECTOR equ 0x2
+;页表相关配置
+PAGE_DIR_TABLE_POS equ 0x100000 ;页表位于1MB处
+PG_RW_R equ 00b
+PG_RW_W equ 10b
+PG_US_S equ 000b
+PG_US_U equ 100b
+PG_P equ 1b
 ; 段描述符属性
 DESC_G_4K equ 0x00800000 ;段界限的单位为4K
 DESC_DB_32 equ 0x00400000 ;地址或操作数位数
