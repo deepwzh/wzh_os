@@ -144,9 +144,32 @@ mov byte [gs:336], 'm'
 mov byte [gs:338], 'o'
 mov byte [gs:340], 'd'
 mov byte [gs:342], 'e'
+mov eax, 240
+push eax
+call set_cursor
+add esp, 4
 mov esp, 0xc009f000
+
 jmp KERNEL_ENTRY_POINT ;内核入口
 message: db "Hello Loader!"
+set_cursor:
+mov bx, [esp + 4]
+mov dx, 0x03d4
+mov al, 0x0e
+mov al, bh
+out dx, al
+mov dx, 0x03d5
+out dx, al
+; mov bh, al
+
+mov dx, 0x03d4
+mov al, 0fh
+; out dx, al
+out dx, al
+mov al, bl
+mov dx, 0x03d5
+out dx, al
+ret
 kernel_init:
 xor eax, eax ; 
 xor ebx, ebx ;ebx记录程序头表的地址
