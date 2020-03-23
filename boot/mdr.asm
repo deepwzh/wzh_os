@@ -51,7 +51,7 @@ cmp cx, di
 jnz print
 mov eax, LOADER_START_SECTOR
 mov bx, LOADER_BASE_ADDR
-mov cx, 10
+mov cx, 4
 call rd_disk_m_16
 jmp LOADER_BASE_ADDR
 ;实模式下读取硬盘n个扇区

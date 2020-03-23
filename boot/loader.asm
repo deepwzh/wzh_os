@@ -28,7 +28,7 @@ gdt_ptr dw GDT_LIMIT
 
 ards_buf times 244 db 0
 ards_nr dw 0
-loader_start:
+loader_start: ;0xc00
 
 mov ebx, 0
 mov di, ards_buf
@@ -60,7 +60,7 @@ mov edx, eax
 loop .q
 mov [total_mem_bytes],edx ; 将内存大小保存
 
-;实模式下打印字符串
+;实模式下打印字符串0xc52
 mov ax, 0xb800
 mov gs, ax ;0x00000c50
 ; mov ax, 0x900
@@ -83,7 +83,7 @@ jnz print
 
 
 
-; 打开A20
+; 打开A20 ;0xc79
 in al, 0x92
 or al, 0000_0010b
 out 0x92, al
@@ -99,7 +99,7 @@ mov cr0, eax
 jmp dword SELECTOR_CODE:p_mode_start
 
 [bits 32]
-
+;0xc96
 p_mode_start:
 mov ax, SELECTOR_DATA
 mov ds, ax
@@ -126,6 +126,12 @@ or eax,0x80000000 ;
 mov cr0, eax
 lgdt [gdt_ptr] ;?
 
+
+mov eax, KERNEL_START_SECTOR
+mov ebx, KERNEL_BIN_BASE_ADDR
+mov ecx, 200
+call rd_disk_m_32
+call kernel_init
 mov byte [gs:320], 'P'
 mov byte [gs:322], 'r'
 mov byte [gs:324], 'o'
@@ -138,9 +144,51 @@ mov byte [gs:336], 'm'
 mov byte [gs:338], 'o'
 mov byte [gs:340], 'd'
 mov byte [gs:342], 'e'
-jmp $
+mov esp, 0xc009f000
+jmp KERNEL_ENTRY_POINT ;内核入口
 message: db "Hello Loader!"
+kernel_init:
+xor eax, eax ; 
+xor ebx, ebx ;ebx记录程序头表的地址
+xor ecx, ecx ;ecx 记录program header数量 
+xor edx, edx ; edx 记录program header 尺寸
+
+mov ebx, [KERNEL_BIN_BASE_ADDR + 28]
+mov cx, [KERNEL_BIN_BASE_ADDR + 44]
+mov dx, [KERNEL_BIN_BASE_ADDR + 42]
+
+add ebx, KERNEL_BIN_BASE_ADDR
+
+.each_segment:
+cmp byte [ebx + 0], PT_NULL
+je .PTNULL
+push dword [ebx + 16] ;size
+mov eax, [ebx + 4]
+add eax, KERNEL_BIN_BASE_ADDR
+push eax;src
+push dword [ebx + 8];dst
+call mem_cpy
+add esp, 12 ;清理参数
+.PTNULL:
+add ebx, edx
+loop .each_segment
+ret
+;内存复制(dst32,src32,size32)
+mem_cpy:
+cld ; 地址方向设置默认（向上）
+push ebp
+mov ebp, esp
+push ecx
+mov edi, [bp + 8] ;dst
+mov esi, [bp + 12] ;src
+mov ecx, [bp + 16]; size
+rep movsb
+pop ecx
+pop ebp
+ret
+;配置页表
 setup_page:
+;清空页表所在的内存
 mov ecx, 4096 ; cx->ecx
 mov esi, 0
 .clear_page_dir:
@@ -148,6 +196,7 @@ mov byte [PAGE_DIR_TABLE_POS + esi], 0x00
 inc esi
 loop .clear_page_dir
 
+;创建页目录
 .create_pde:
 mov eax, PAGE_DIR_TABLE_POS
 add eax, 0x1000
@@ -161,6 +210,7 @@ mov [PAGE_DIR_TABLE_POS + 0xffc], eax
 mov ecx, 256
 mov edi, 0
 mov eax, PG_US_U | PG_RW_W | PG_P
+;创建内核页表
 .create_pte:
 mov [ebx + edi*4], eax
 add eax, 0x1000
@@ -172,9 +222,57 @@ add eax, 0x2000
 or eax, PG_US_U | PG_RW_W | PG_P
 mov ecx,254
 mov ebx, 0x301 ; 0x300项对应0xc0000000, 0x301对应0xc0400000，即0xc0400000-0xffc00000的映射
+;创建内核页目录
 .create_kernel_pde:
 mov [PAGE_DIR_TABLE_POS + ebx*4], eax
 inc ebx
 add eax, 0x1000
 loop .create_kernel_pde
 ret
+;实模式下读取硬盘n个扇区
+;eax LBA地址
+;bx 要写的内存地址
+;cx要读的扇区数
+rd_disk_m_32:
+  mov esi, eax
+  mov dx, 0x1f2
+  mov al, cl
+  out dx, al
+  mov eax, esi
+
+  mov dx, 0x1f3
+  out dx, al
+  shr eax, 8
+  mov dx, 0x1f4
+  out dx, al
+  shr eax, 8
+  mov dx, 0x1f5
+  out dx, al
+
+  shr eax, 8
+  and al, 0x0f
+  or al, 0xe0
+  mov dx, 0x1f6
+  out dx, al
+
+  mov dx, 0x1f7
+  mov al, 0x20
+  out dx, al
+
+  .not_ready:
+  in al,dx
+  and al, 0x88
+  cmp al, 0x08
+  jnz .not_ready
+
+  ;数据准备好了
+  mov eax, 128
+  mul ecx
+  mov ecx, eax
+  mov dx, 0x1f0
+  .go_on_read:
+      in eax,dx
+      mov [ebx], eax
+      add ebx, 4
+      loop .go_on_read
+  ret
